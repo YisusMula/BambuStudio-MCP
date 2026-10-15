@@ -1,0 +1,90 @@
+diff --git a/src/slic3r/GUI/BackgroundSlicingProcess.cpp b/src/slic3r/GUI/BackgroundSlicingProcess.cpp
+index 02a39ea..770752b 100644
+--- a/src/slic3r/GUI/BackgroundSlicingProcess.cpp
++++ b/src/slic3r/GUI/BackgroundSlicingProcess.cpp
+@@ -124,7 +124,7 @@ BackgroundSlicingProcess::~BackgroundSlicingProcess()
+ 	this->join_background_thread();
+ 	for (auto &t : m_orphaned_threads) {
+ 		if (t.joinable())
+-			t.join();
++			t.detach();
+ 	}
+ 	m_orphaned_threads.clear();
+ 	//BBS: move this logic to part plate
+@@ -589,6 +589,24 @@ bool BackgroundSlicingProcess::stop()
+ 		// Wait until the background processing stops by being canceled.
+ 		// Keep Print unchanged until its worker has stopped.
+ 		if (!m_condition.wait_for(lck, std::chrono::seconds(1), [this](){ return m_state == STATE_CANCELED || m_state == STATE_FINISHED; })) {
++			if (m_mcp_run == 0) {
++				// Not an MCP slice: keep upstream's timed force-cancel so a stuck background thread
++				// (e.g. in boost::polygon::construct_voronoi) cannot freeze the UI permanently.
++				BOOST_LOG_TRIVIAL(error) << "BackgroundSlicingProcess::stop() timed out. "
++				                         << "Force-canceling (generation " << m_task_generation << " -> " << m_task_generation + 1 << "). "
++				                         << "Background thread will be orphaned until its computation completes.";
++				++m_task_generation;
++				++m_mcp_worker_lifetime->orphans;
++				m_orphaned_threads.push_back(std::move(m_thread));
++				m_state = STATE_INITIAL;
++				m_print->restart();
++				m_print->set_cancel_callback([](){});
++				SlicingProcessCompletedEvent evt(m_event_finished_id, 0,
++					SlicingProcessCompletedEvent::Cancelled, std::exception_ptr());
++				wxQueueEvent(GUI::wxGetApp().mainframe->m_plater, evt.Clone());
++				BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ", exit (force-canceled, thread orphaned)" << std::endl;
++				return true;
++			}
+ 			BOOST_LOG_TRIVIAL(warning) << "Background slicing cancellation is waiting for the native worker";
+ 			m_condition.wait(lck, [this](){ return m_state == STATE_CANCELED || m_state == STATE_FINISHED; });
+ 		}
+@@ -649,6 +667,20 @@ void BackgroundSlicingProcess::stop_internal()
+ 		// Wait until the background processing stops by being canceled.
+ 		// Print::apply must not mutate Print while its worker still uses it.
+ 		if (!m_condition.wait_for(lck, std::chrono::seconds(5), [this](){ return m_state == STATE_CANCELED || m_state == STATE_FINISHED; })) {
++			if (m_mcp_run == 0) {
++				// Not an MCP slice: keep upstream's timed force-cancel (see stop()).
++				BOOST_LOG_TRIVIAL(error) << "BackgroundSlicingProcess::stop_internal() timed out. "
++				                         << "Force-canceling (generation " << m_task_generation << " -> " << m_task_generation + 1 << ").";
++				++m_task_generation;
++				++m_mcp_worker_lifetime->orphans;
++				m_orphaned_threads.push_back(std::move(m_thread));
++				m_print->state_mutex().lock();
++				m_state = STATE_INITIAL;
++				m_print->restart();
++				m_print->set_cancel_callback([](){});
++				BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ", exit (force-canceled, thread orphaned)" << std::endl;
++				return;
++			}
+ 			BOOST_LOG_TRIVIAL(warning) << "Background slicing cancellation is waiting for the native worker";
+ 			m_condition.wait(lck, [this](){ return m_state == STATE_CANCELED || m_state == STATE_FINISHED; });
+ 		}
+diff --git a/src/slic3r/GUI/MainFrame.cpp b/src/slic3r/GUI/MainFrame.cpp
+index 95b9274..a61b7e2 100644
+--- a/src/slic3r/GUI/MainFrame.cpp
++++ b/src/slic3r/GUI/MainFrame.cpp
+@@ -490,8 +490,9 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, BORDERLESS_FRAME_
+     // declare events
+     Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& event) {
+         BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< ": mainframe received close_widow event";
+-        if (event.CanVeto() && (wxGetApp().mcp_call_active() || mcp_slice_active() || m_plater->background_process().running())) {
+-            m_plater->show_status_message("An MCP operation or slice is still running. Cancel it or wait before closing.");
++        // Only MCP-owned work blocks closing; a normal slice is cancelled on close as in upstream.
++        if (event.CanVeto() && (wxGetApp().mcp_call_active() || mcp_slice_active())) {
++            m_plater->show_status_message("An MCP operation is still running. Cancel it or wait before closing.");
+             event.Veto();
+             return;
+         }
+diff --git a/src/slic3r/GUI/McpAdvanced.inc b/src/slic3r/GUI/McpAdvanced.inc
+index 05f5582..da567c1 100644
+--- a/src/slic3r/GUI/McpAdvanced.inc
++++ b/src/slic3r/GUI/McpAdvanced.inc
+@@ -683,8 +683,8 @@ void register_advanced_handlers(std::map<std::string, Handler>& methods) {
+         auto mesh = Plater::combine_mesh_fff(object, ii, [](const std::string& error) { throw RpcError("NATIVE_ERROR", error); });
+         require(!mesh.empty(), "Object has no exportable geometry");
+         if (destination.extension() == ".stl") {
+-            if (!mesh.write_binary(source.c_str())) throw RpcError("NATIVE_ERROR", "Native STL writer failed");
+-        } else mesh.WriteOBJFile(source.c_str());
++            if (!mesh.write_binary(source.string().c_str())) throw RpcError("NATIVE_ERROR", "Native STL writer failed");
++        } else mesh.WriteOBJFile(source.string().c_str());
+         const auto bytes = mcp_copy_gcode(source.string(), (directory / "publish.tmp").string(), destination.string(), overwrite, [] { return true; });
+         return {{"path", destination.string()}, {"bytes", bytes}, {"frame", "world"}, {"triangles", mesh.its.indices.size()}};
+     });

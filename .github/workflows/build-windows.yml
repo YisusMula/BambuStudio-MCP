@@ -1,0 +1,156 @@
+name: Build Windows
+
+# Descarga Bambu Studio oficial en la versión de UPSTREAM_TAG, aplica patches/*.patch
+# en orden y compila la versión portable de Windows con el servidor MCP integrado.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publicar el resultado como Release de GitHub'
+        type: boolean
+        default: true
+
+concurrency:
+  group: build-windows
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Bambu Studio MCP (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      # Los parches se generan con finales de línea LF: que Git no los convierta.
+      - name: Disable CRLF conversion
+        run: git config --global core.autocrlf false
+
+      - name: Checkout this repository
+        uses: actions/checkout@v6
+        with:
+          path: mcp
+
+      - name: Read upstream tag
+        id: tag
+        shell: pwsh
+        run: |
+          $tag = (Get-Content mcp/UPSTREAM_TAG -Raw).Trim()
+          if ($tag -notmatch '^v\d{2}\.\d{2}\.\d{2}\.\d+$') { throw "UPSTREAM_TAG no válido: '$tag'" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$($tag.Substring(1))" >> $env:GITHUB_OUTPUT
+
+      - name: Checkout Bambu Studio ${{ steps.tag.outputs.tag }}
+        uses: actions/checkout@v6
+        with:
+          repository: bambulab/BambuStudio
+          ref: ${{ steps.tag.outputs.tag }}
+          path: bambu
+          lfs: true
+
+      - name: Apply patches
+        shell: pwsh
+        working-directory: bambu
+        run: |
+          Get-ChildItem ../mcp/patches/*.patch | Sort-Object Name | ForEach-Object {
+            Write-Host "Applying $($_.Name)"
+            git apply --whitespace=nowarn $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "El parche $($_.Name) no se aplica sobre ${{ steps.tag.outputs.tag }}" }
+          }
+
+      - name: Restore dependency cache
+        id: deps-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: bambu/deps/build/BambuStudio_dep
+          key: windows-deps-${{ hashFiles('bambu/deps/**') }}
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install build tools
+        run: choco install strawberryperl pkgconfiglite -y --no-progress
+
+      # Igual que el CI oficial (build_deps.yml). Tarda ~1 h la primera vez.
+      - name: Build dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        working-directory: bambu
+        run: |
+          mkdir deps\build\BambuStudio_dep
+          cd deps\build
+          cmake ../ -G "Visual Studio 18 2026" -A x64 -DDESTDIR="./BambuStudio_dep" -DCMAKE_BUILD_TYPE=Release -DDEP_DEBUG=OFF
+          msbuild /m ALL_BUILD.vcxproj
+
+      # Se guarda aunque falle la compilación de la app, para no repetir esa hora.
+      - name: Save dependency cache
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: bambu/deps/build/BambuStudio_dep
+          key: ${{ steps.deps-cache.outputs.cache-primary-key }}
+
+      # Opciones de versión pública: sin ellas la app usa los servidores de pruebas
+      # de Bambu y una carpeta de perfiles "Internal".
+      - name: Build Bambu Studio
+        working-directory: bambu
+        run: |
+          mkdir build
+          cd build
+          cmake .. -G "Visual Studio 18 2026" -A X64 -DBBL_RELEASE_TO_PUBLIC=1 -DBBL_INTERNAL_TESTING=0 -DCMAKE_PREFIX_PATH="${{ github.workspace }}\bambu\deps\build\BambuStudio_dep\usr\local" -DCMAKE_INSTALL_PREFIX="../install-dir" -DCMAKE_BUILD_TYPE=Release -DWIN10SDK_PATH="C:/Program Files (x86)/Windows Kits/10/Include/10.0.22000.0"
+          cmake --build . --target install --config Release -- -m
+
+      - name: Test MCP server
+        id: mcp-tests
+        continue-on-error: true
+        shell: pwsh
+        working-directory: bambu
+        run: |
+          cmake -S tests/mcp -B build-mcp-tests -G "Visual Studio 18 2026" -A x64 -DCMAKE_PREFIX_PATH="${{ github.workspace }}\bambu\deps\build\BambuStudio_dep\usr\local"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build build-mcp-tests --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          ctest --test-dir build-mcp-tests -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python tests/mcp/test_legacy_contract.py
+
+      - name: Package
+        id: pack
+        shell: pwsh
+        run: |
+          $name = "BambuStudio-MCP_${{ steps.tag.outputs.version }}_Windows_x64_portable"
+          & "C:/Program Files/7-Zip/7z.exe" a -tzip "$name.zip" "./bambu/install-dir/*"
+          if ($LASTEXITCODE -ne 0) { throw "7z falló" }
+          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
+          "name=$name" >> $env:GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.pack.outputs.name }}
+          path: |
+            ${{ steps.pack.outputs.name }}.zip
+            ${{ steps.pack.outputs.name }}.zip.sha256
+          retention-days: 14
+
+      - name: Publish release
+        if: inputs.publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "mcp-${{ steps.tag.outputs.tag }}-r${{ github.run_number }}"
+          $tests = if ("${{ steps.mcp-tests.outcome }}" -eq "success") { "superados" } else { "FALLIDOS (revisar el log de la ejecución)" }
+          $notes = @"
+          Bambu Studio ${{ steps.tag.outputs.version }} oficial con el servidor MCP integrado (PR bambulab/BambuStudio#12485) y las correcciones de este repositorio.
+
+          - Commit de este repo: ${{ github.sha }}
+          - Tests del servidor MCP: $tests
+          - Compilación: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Instrucciones de instalación y conexión con Claude en el README.
+          "@
+          gh release create $tag "${{ steps.pack.outputs.name }}.zip" "${{ steps.pack.outputs.name }}.zip.sha256" --repo ${{ github.repository }} --title "Bambu Studio MCP ${{ steps.tag.outputs.version }} (r${{ github.run_number }})" --notes $notes --prerelease
