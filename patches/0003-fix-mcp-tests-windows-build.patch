@@ -1,14 +1,17 @@
 diff --git a/tests/mcp/CMakeLists.txt b/tests/mcp/CMakeLists.txt
-index 2fbf4d0..ecb1d10 100644
+index 2fbf4d0..fe41cfb 100644
 --- a/tests/mcp/CMakeLists.txt
 +++ b/tests/mcp/CMakeLists.txt
-@@ -13,6 +13,9 @@ target_include_directories(mcp_server_tests PRIVATE ../../src)
+@@ -13,7 +13,11 @@ target_include_directories(mcp_server_tests PRIVATE ../../src)
  target_compile_definitions(mcp_server_tests PRIVATE BOOST_ERROR_CODE_HEADER_ONLY)
  target_link_libraries(mcp_server_tests PRIVATE OpenSSL::Crypto Threads::Threads Boost::filesystem)
  if(WIN32)
+-    target_link_libraries(mcp_server_tests PRIVATE advapi32 ws2_32)
 +    # McpGcodeExport.hpp incluye <windows.h>; sin esto arrastra winsock.h y Boost.Asio no compila.
 +    # BOOST_ALL_NO_LIB, como la app (CMakeLists.txt raíz): sin él MSVC pide .lib de Boost con otro nombre.
 +    target_compile_definitions(mcp_server_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00 BOOST_ALL_NO_LIB)
-     target_link_libraries(mcp_server_tests PRIVATE advapi32 ws2_32)
++    # La OpenSSL estática de las dependencias usa la CryptoAPI de Windows (crypt32), como libcurl en la app.
++    target_link_libraries(mcp_server_tests PRIVATE advapi32 ws2_32 crypt32)
  endif()
  enable_testing()
+ add_test(NAME mcp_server COMMAND mcp_server_tests)

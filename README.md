@@ -18,7 +18,7 @@ Este repositorio **no contiene el código de Bambu Studio**. Solo guarda:
 1. **Compilación en Windows:** `export.geometry` pasaba una ruta `std::filesystem::path` (texto ancho en Windows) a una función que espera `const char*`.
 2. **Cancelar un laminado normal ya no puede congelar la app:** el PR quitaba la cancelación forzada con tiempo límite que trae Bambu Studio. Se recupera para los laminados normales; los lanzados por el MCP mantienen el comportamiento del PR.
 3. **Cerrar la ventana:** el PR impedía cerrar Bambu Studio durante cualquier laminado. Ahora solo lo impide mientras hay una operación del MCP en marcha.
-4. **Tests en Windows:** el ejecutable de tests no compilaba (`<windows.h>` incluía `winsock.h` antes de Boost.Asio). Además MSVC intentaba enlazar automáticamente una `.lib` de Boost con un nombre que no existe. Se definen `WIN32_LEAN_AND_MEAN` y `BOOST_ALL_NO_LIB` (como ya hace la app) solo para los tests; la app no cambia.
+4. **Tests en Windows:** el ejecutable de tests no compilaba (`<windows.h>` incluía `winsock.h` antes de Boost.Asio). Además MSVC intentaba enlazar automáticamente una `.lib` de Boost con un nombre que no existe. Se definen `WIN32_LEAN_AND_MEAN` y `BOOST_ALL_NO_LIB` y se enlaza `crypt32`, como ya hace la app, solo para los tests; la app no cambia.
 
 ## Instalar (Windows x64)
 
