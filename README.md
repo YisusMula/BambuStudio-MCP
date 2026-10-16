@@ -9,6 +9,7 @@ Este repositorio **no contiene el código de Bambu Studio**. Solo guarda:
 | `UPSTREAM_TAG` | Versión oficial de Bambu Studio que se compila (ahora `v02.08.04.61`, línea 2.8.4 beta). |
 | `patches/0001-native-mcp-server.patch` | El servidor MCP del [PR #12485](https://github.com/bambulab/BambuStudio/pull/12485) de otarkhan (90 herramientas), sin cambios. |
 | `patches/0002-windows-fixes-and-upstream-behaviour.patch` | Nuestras correcciones (ver abajo). |
+| `patches/0003-fix-mcp-tests-windows-build.patch` | Hace que los tests del servidor MCP compilen en Windows. |
 | `.github/workflows/build-windows.yml` | Descarga Bambu Studio, aplica los parches y compila la versión portable de Windows. |
 | `.github/workflows/check-upstream.yml` | Cada día comprueba si Bambu ha publicado una versión nueva y abre un issue. |
 
@@ -17,6 +18,7 @@ Este repositorio **no contiene el código de Bambu Studio**. Solo guarda:
 1. **Compilación en Windows:** `export.geometry` pasaba una ruta `std::filesystem::path` (texto ancho en Windows) a una función que espera `const char*`.
 2. **Cancelar un laminado normal ya no puede congelar la app:** el PR quitaba la cancelación forzada con tiempo límite que trae Bambu Studio. Se recupera para los laminados normales; los lanzados por el MCP mantienen el comportamiento del PR.
 3. **Cerrar la ventana:** el PR impedía cerrar Bambu Studio durante cualquier laminado. Ahora solo lo impide mientras hay una operación del MCP en marcha.
+4. **Tests en Windows:** el ejecutable de tests no compilaba (`<windows.h>` incluía `winsock.h` antes de Boost.Asio). Se define `WIN32_LEAN_AND_MEAN` solo para los tests; la app no cambia.
 
 ## Instalar (Windows x64)
 
