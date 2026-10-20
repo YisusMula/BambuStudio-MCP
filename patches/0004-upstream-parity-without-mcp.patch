@@ -1,3 +1,50 @@
+diff --git a/src/slic3r/GUI/BackgroundSlicingProcess.cpp b/src/slic3r/GUI/BackgroundSlicingProcess.cpp
+index 770752b..c4eee43 100644
+--- a/src/slic3r/GUI/BackgroundSlicingProcess.cpp
++++ b/src/slic3r/GUI/BackgroundSlicingProcess.cpp
+@@ -214,7 +214,9 @@ void BackgroundSlicingProcess::process_fff(std::uint64_t mcp_run, const std::sha
+ 		// Post the Slicing Finished message for the G-code viewer to update.
+ 		// Passing the timestamp
+ 		evt.SetInt((int)(m_fff_print->step_state_with_timestamp(PrintStep::psSlicingFinished).timestamp));
+-		worker_lifetime->publish([this, &evt] { wxQueueEvent(GUI::wxGetApp().mainframe->m_plater, evt.Clone()); });
++		auto post = [this, &evt] { wxQueueEvent(GUI::wxGetApp().mainframe->m_plater, evt.Clone()); };
++		// Not an MCP slice: post directly as upstream does.
++		if (mcp_run) worker_lifetime->publish(post); else post();
+ 
+ 		m_temp_output_path = this->get_current_plate()->get_tmp_gcode_path();
+ 		if (! m_export_path.empty()) {
+@@ -247,7 +249,9 @@ void BackgroundSlicingProcess::process_fff(std::uint64_t mcp_run, const std::sha
+ 		// Post the Slicing Finished message for the G-code viewer to update.
+ 		// Passing the timestamp
+ 		evt.SetInt((int)(m_fff_print->step_state_with_timestamp(PrintStep::psSlicingFinished).timestamp));
+-		worker_lifetime->publish([this, &evt] { wxQueueEvent(GUI::wxGetApp().mainframe->m_plater, evt.Clone()); });
++		auto post = [this, &evt] { wxQueueEvent(GUI::wxGetApp().mainframe->m_plater, evt.Clone()); };
++		// Not an MCP slice: post directly as upstream does.
++		if (mcp_run) worker_lifetime->publish(post); else post();
+ 
+ 		//BBS: add plate index into render params
+ 		m_temp_output_path = this->get_current_plate()->get_tmp_gcode_path();
+@@ -372,7 +376,9 @@ void BackgroundSlicingProcess::thread_proc()
+ 				(m_state == STATE_CANCELED) ? SlicingProcessCompletedEvent::Cancelled :
+ 				exception ? SlicingProcessCompletedEvent::Error : SlicingProcessCompletedEvent::Finished, exception, mcp_run);
+ 			BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(": send SlicingProcessCompletedEvent to main, status %1%")%evt.status();
+-	        mcp_worker_lifetime->publish([this, &evt] { wxQueueEvent(GUI::wxGetApp().mainframe->m_plater, evt.Clone()); });
++	        auto post = [this, &evt] { wxQueueEvent(GUI::wxGetApp().mainframe->m_plater, evt.Clone()); };
++	        // Not an MCP slice: post directly as upstream does, also while this object is being destroyed.
++	        if (mcp_run) mcp_worker_lifetime->publish(post); else post();
+ 		}
+ 		else {
+ 			//BBS: internal cancel
+@@ -561,7 +567,8 @@ bool BackgroundSlicingProcess::start()
+ 	m_mcp_worker_lifetime = std::make_shared<GUI::McpWorkerLifetime>();
+ 	m_mcp_run = m_mcp_pending_run;
+     m_mcp_pending_run = 0;
+-    if (m_current_plate) m_current_plate->mcp_set_status_run(m_mcp_run, m_mcp_worker_lifetime);
++    // Normal slices get upstream's plain status callback (no lifetime, no lock).
++    if (m_current_plate) m_current_plate->mcp_set_status_run(m_mcp_run, m_mcp_run ? m_mcp_worker_lifetime : nullptr);
+ 	m_state = STATE_STARTED;
+ 	m_print->set_cancel_callback([this](){ this->stop_internal(); });
+ 	lck.unlock();
 diff --git a/src/slic3r/GUI/GUI_App.cpp b/src/slic3r/GUI/GUI_App.cpp
 index 52e30d3..d8538db 100644
 --- a/src/slic3r/GUI/GUI_App.cpp

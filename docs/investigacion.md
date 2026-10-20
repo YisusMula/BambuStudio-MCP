@@ -53,7 +53,7 @@ Resumen de lo investigado y verificado (octubre de 2026). Las referencias `archi
     - recuperar la cancelación forzada de Bambu para los laminados que no son del MCP;
     - bloquear el cierre de la ventana solo durante operaciones del MCP.
   - `0003` solo toca el CMake de los tests (`WIN32_LEAN_AND_MEAN`, `BOOST_ALL_NO_LIB`, `crypt32`).
-  - `0004` deja como la oficial tres cambios del PR que también afectaban sin MCP (ver sección 5).
+  - `0004` deja como la oficial cuatro cambios del PR que también afectaban sin MCP (ver sección 5).
 - **Pendiente:**
   - probar en la impresora real: iniciar sesión, LAN, nube, cámara y, por último, el MCP.
 
@@ -67,13 +67,13 @@ Revisión hunk a hunk de `v02.08.04.61` contra `0001`+`0002`+`0003`, con dos ver
 - El cierre de la ventana y la versión del plugin de red (`get_plugin_url`) son idénticos.
 - Diferencias que quedan, todas inocuas:
   - la sección "Local MCP server" en Preferencias → General, sin traducir;
-  - cuatro claves `mcp_*` en el `BambuStudio.conf` compartido; la oficial las conserva sin problema;
-  - un mutex por mensaje de progreso del laminado (`McpWorkerLifetime::publish`).
+  - cuatro claves `mcp_*` en el `BambuStudio.conf` compartido; la oficial las conserva sin problema.
 
 **Corregido en `0004`** (venía de `0001` y afectaba sin MCP):
 - `GUI_App::can_recreate_GUI()` impedía, sin avisar, cambiar el idioma o el LOD mientras se laminaba o había una tarea. Ahora solo lo impide el trabajo del MCP.
 - `ExclusiveJobGroup::start()` ignoraba organizar, orientar o rellenar la placa si la tarea anterior no se paraba en 10 s.
 - `Job::start()`: si no se podía crear el hilo, pasaba por `on_exception()` en vez de `finalize()`. Con `UpgradeNetworkJob` acababa en recursión infinita.
+- `BackgroundSlicingProcess`: los eventos de los laminados normales (progreso, laminado terminado, fin o cancelación) pasaban por `McpWorkerLifetime::publish`. Eso añadía un mutex por mensaje y, tras el cambio de idioma de arriba, se tragaba el evento de cancelación del laminado antiguo. Ahora solo pasan por ahí los del MCP; los normales se publican directamente, como en la oficial.
 
 **Corregido en el workflow:** el `WIN10SDK_PATH` 10.0.22000.0, copiado del CI oficial, no existe en `windows-2025-vs2026`. Sin él no se define `HAS_WIN10SDK` y desaparecen "Reparar modelo" (Netfabb), la reparación tras el corte y la de la importación de texturas. El CI público de Bambu tiene el mismo fallo; el instalador oficial no. Ahora el workflow detecta el SDK y falla si se va a compilar sin Netfabb.
 

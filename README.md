@@ -10,7 +10,7 @@ Este repositorio **no contiene el código de Bambu Studio**. Solo guarda:
 | `patches/0001-native-mcp-server.patch` | El servidor MCP del [PR #12485](https://github.com/bambulab/BambuStudio/pull/12485) de otarkhan (90 herramientas), sin cambios. |
 | `patches/0002-windows-fixes-and-upstream-behaviour.patch` | Nuestras correcciones (ver abajo). |
 | `patches/0003-fix-mcp-tests-windows-build.patch` | Hace que los tests del servidor MCP compilen en Windows. |
-| `patches/0004-upstream-parity-without-mcp.patch` | Quita tres cambios del PR que también afectaban a quien no usa el MCP (ver abajo). |
+| `patches/0004-upstream-parity-without-mcp.patch` | Quita cuatro cambios del PR que también afectaban a quien no usa el MCP (ver abajo). |
 | `.github/workflows/build-windows.yml` | Descarga Bambu Studio, aplica los parches y compila la versión portable de Windows. |
 | `.github/workflows/check-upstream.yml` | Cada día comprueba si Bambu ha publicado una versión nueva y abre un issue. |
 
@@ -23,6 +23,7 @@ Este repositorio **no contiene el código de Bambu Studio**. Solo guarda:
 5. **Igual que la oficial cuando no se usa el MCP** (`0004`):
    - Cambiar el idioma o activar el LOD en Preferencias funciona mientras se lamina u organiza. El PR lo impedía sin avisar.
    - Organizar, orientar o rellenar la placa arrancan aunque la tarea anterior tarde en pararse, como en la oficial. El PR las ignoraba sin avisar.
+   - Los avisos de un laminado normal (progreso, terminado, cancelado) llegan por el mismo camino que en la oficial. El PR los hacía pasar por el control del MCP.
    - Si Windows no puede crear el hilo de una tarea, se muestra el mensaje de la oficial. Con el PR salía otro error y, si pasaba al descargar el plugin de red, la app se cerraba de golpe. Es un caso muy raro.
 6. **"Reparar modelo" en Windows:** el CI de Bambu fija un Windows SDK (10.0.22000.0) que ya no está en los runners de GitHub, y sin él la opción se compila fuera sin avisar. El workflow busca el SDK disponible y falla si la opción no se va a compilar.
 
