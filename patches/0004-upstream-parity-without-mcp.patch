@@ -62,7 +62,7 @@ index 52e30d3..d8538db 100644
  
  bool GUI_App::recreate_GUI(const wxString &msg_name)
 diff --git a/src/slic3r/GUI/Jobs/Job.cpp b/src/slic3r/GUI/Jobs/Job.cpp
-index 2490f66..57db797 100644
+index 2490f66..70be099 100644
 --- a/src/slic3r/GUI/Jobs/Job.cpp
 +++ b/src/slic3r/GUI/Jobs/Job.cpp
 @@ -137,7 +137,8 @@ void GUI::Job::start()
@@ -75,7 +75,7 @@ index 2490f66..57db797 100644
              update_status(status_range() + (m_mcp_run ? 1 : 0),
                            _(L("Error! Unable to create thread!")));
          }
-@@ -162,7 +163,8 @@ bool GUI::Job::join(int timeout_ms)
+@@ -162,12 +163,14 @@ bool GUI::Job::join(int timeout_ms)
  void GUI::ExclusiveJobGroup::start(size_t jid) {
      assert(jid < m_jobs.size());
      stop_all();
@@ -85,3 +85,10 @@ index 2490f66..57db797 100644
      if (std::any_of(m_jobs.begin(), m_jobs.end(), [](const auto& job) {
          return job->mcp_run() && !job->is_finalized();
      })) return;
+     for (auto& job : m_jobs) {
+-        job->mcp_set_run(0);
++        // Only finalized MCP jobs get here with a run id; never write a job that may still be running.
++        if (job->mcp_run()) job->mcp_set_run(0);
+     }
+     m_jobs[jid]->start();
+ }
