@@ -82,6 +82,9 @@ Revisión hunk a hunk de `v02.08.04.61` contra `0001`+`0002`+`0003`, con dos ver
 - Si una importación por MCP choca con un diálogo (objeto demasiado grande), el objeto puede quedar en el `Model` sin fila en la lista de objetos.
 - Un `project.open` fallido deja el proyecto a medias.
 - Varias herramientas (`export.geometry`, `view.capture`, archivos en `%TEMP%`) usan `std::filesystem::path(...).string()`, que en Windows usa la página de códigos ANSI. Pueden fallar con rutas con acentos (p. ej. `C:\Users\José`).
+- `mcp_orphans_running()` solo cuenta los hilos huérfanos del último `start()`. Si tras una cancelación forzada se lamina otra vez a mano, el MCP puede empezar a laminar mientras el huérfano antiguo sigue en marcha. La oficial ya permite dos hilos sobre el mismo `Print` en ese caso.
+
+**Revisado y sin efecto observable:** `BackgroundSlicingProcess::start()` vuelve a instalar el callback de progreso en cada laminado. La oficial ya lo instala en `update_slice_context()` justo antes, y para los laminados normales es el mismo callback.
 
 **Empaquetado:**
 - El zip no lleva el runtime de Visual C++ y se compila con MSVC 19.51 (v145); hace falta el redistributable reciente.
