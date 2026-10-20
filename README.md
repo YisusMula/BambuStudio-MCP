@@ -10,6 +10,7 @@ Este repositorio **no contiene el código de Bambu Studio**. Solo guarda:
 | `patches/0001-native-mcp-server.patch` | El servidor MCP del [PR #12485](https://github.com/bambulab/BambuStudio/pull/12485) de otarkhan (90 herramientas), sin cambios. |
 | `patches/0002-windows-fixes-and-upstream-behaviour.patch` | Nuestras correcciones (ver abajo). |
 | `patches/0003-fix-mcp-tests-windows-build.patch` | Hace que los tests del servidor MCP compilen en Windows. |
+| `patches/0004-upstream-parity-without-mcp.patch` | Quita tres cambios del PR que también afectaban a quien no usa el MCP (ver abajo). |
 | `.github/workflows/build-windows.yml` | Descarga Bambu Studio, aplica los parches y compila la versión portable de Windows. |
 | `.github/workflows/check-upstream.yml` | Cada día comprueba si Bambu ha publicado una versión nueva y abre un issue. |
 
@@ -19,13 +20,18 @@ Este repositorio **no contiene el código de Bambu Studio**. Solo guarda:
 2. **Cancelar un laminado normal ya no puede congelar la app:** el PR quitaba la cancelación forzada con tiempo límite que trae Bambu Studio. Se recupera para los laminados normales; los lanzados por el MCP mantienen el comportamiento del PR.
 3. **Cerrar la ventana:** el PR impedía cerrar Bambu Studio durante cualquier laminado. Ahora solo lo impide mientras hay una operación del MCP en marcha.
 4. **Tests en Windows:** el ejecutable de tests no compilaba (`<windows.h>` incluía `winsock.h` antes de Boost.Asio). Además MSVC intentaba enlazar automáticamente una `.lib` de Boost con un nombre que no existe. Se definen `WIN32_LEAN_AND_MEAN` y `BOOST_ALL_NO_LIB` y se enlaza `crypt32`, como ya hace la app, solo para los tests; la app no cambia.
+5. **Igual que la oficial cuando no se usa el MCP** (`0004`):
+   - Cambiar el idioma o activar el LOD en Preferencias funciona mientras se lamina u organiza. El PR lo impedía sin avisar.
+   - Organizar, orientar o rellenar la placa arrancan aunque la tarea anterior tarde en pararse, como en la oficial. El PR las ignoraba sin avisar.
+   - Si Windows no puede crear el hilo de una tarea, se muestra el mensaje de la oficial. Con el PR salía otro error y, si pasaba al descargar el plugin de red, la app se cerraba de golpe. Es un caso muy raro.
+6. **"Reparar modelo" en Windows:** el CI de Bambu fija un Windows SDK (10.0.22000.0) que ya no está en los runners de GitHub, y sin él la opción se compila fuera sin avisar. El workflow busca el SDK disponible y falla si la opción no se va a compilar.
 
 ## Instalar (Windows x64)
 
 1. Descarga el `.zip` de la última versión en [Releases](../../releases) y, si quieres, comprueba el `.sha256`.
 2. Descomprímelo en una carpeta (por ejemplo `C:\BambuStudio-MCP`) y abre `bambu-studio.exe`.
    - No está firmado: Windows SmartScreen avisará. Pulsa **Más información → Ejecutar de todas formas**.
-   - Si no arranca, instala el [Visual C++ Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe).
+   - Necesita el Visual C++ Redistributable x64 **más reciente** ([descarga de Microsoft](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)). Se compila con Visual Studio 2026; con una versión antigua puede no arrancar o cerrarse al empezar.
 3. **Comparte la carpeta de datos con Bambu Studio oficial** (`%APPDATA%\BambuStudio`): perfiles, sesión e impresoras. Haz una copia de esa carpeta antes de la primera vez.
 4. Si la aplicación ofrece actualizarse, **no aceptes**: instalaría la versión oficial, sin MCP. Las actualizaciones llegan por este repositorio.
 

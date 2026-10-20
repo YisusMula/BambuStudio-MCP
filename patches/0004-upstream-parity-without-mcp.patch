@@ -1,0 +1,40 @@
+diff --git a/src/slic3r/GUI/GUI_App.cpp b/src/slic3r/GUI/GUI_App.cpp
+index 52e30d3..d8538db 100644
+--- a/src/slic3r/GUI/GUI_App.cpp
++++ b/src/slic3r/GUI/GUI_App.cpp
+@@ -4416,9 +4416,8 @@ void release_window_pools();
+ bool GUI_App::can_recreate_GUI()
+ {
+     if (m_mcp_call_active || m_is_recreating_gui || is_closing() || !mainframe || !plater()) return false;
+-    auto &background = plater()->background_process();
+-    return !plater()->is_any_job_running() && !background.running() && !background.mcp_orphans_running() &&
+-           !McpTools::has_pending_native_work();
++    // Only MCP-owned work blocks a rebuild; a normal slice or job is cancelled by the rebuild as in upstream.
++    return !McpTools::has_pending_native_work();
+ }
+ 
+ bool GUI_App::recreate_GUI(const wxString &msg_name)
+diff --git a/src/slic3r/GUI/Jobs/Job.cpp b/src/slic3r/GUI/Jobs/Job.cpp
+index 2490f66..57db797 100644
+--- a/src/slic3r/GUI/Jobs/Job.cpp
++++ b/src/slic3r/GUI/Jobs/Job.cpp
+@@ -137,7 +137,8 @@ void GUI::Job::start()
+             m_worker_error = nullptr;
+             m_thread = create_thread([this] { this->run(m_worker_error); });
+         } catch (std::exception &) {
+-            m_worker_error = std::current_exception();
++            // Not an MCP job: keep upstream's handling (status text, then finalize()).
++            if (m_mcp_run) m_worker_error = std::current_exception();
+             update_status(status_range() + (m_mcp_run ? 1 : 0),
+                           _(L("Error! Unable to create thread!")));
+         }
+@@ -162,7 +163,8 @@ bool GUI::Job::join(int timeout_ms)
+ void GUI::ExclusiveJobGroup::start(size_t jid) {
+     assert(jid < m_jobs.size());
+     stop_all();
+-    if (is_any_running()) return;
++    // As in upstream, a normal job starts even if a previous one did not stop in time;
++    // only an unfinished MCP job refuses it.
+     if (std::any_of(m_jobs.begin(), m_jobs.end(), [](const auto& job) {
+         return job->mcp_run() && !job->is_finalized();
+     })) return;

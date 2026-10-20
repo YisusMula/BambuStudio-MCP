@@ -94,13 +94,25 @@ jobs:
 
       # Opciones de versión pública: sin ellas la app usa los servidores de pruebas
       # de Bambu y una carpeta de perfiles "Internal".
+      # WIN10SDK_PATH: sin un Windows SDK con printing3d.h no se compila "Reparar modelo"
+      # (Netfabb). El CI oficial fija la 10.0.22000.0, que ya no está en el runner.
       - name: Build Bambu Studio
         working-directory: bambu
+        shell: pwsh
         run: |
+          $sdk = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/Include" -Directory |
+            Where-Object { Test-Path "$($_.FullName)/winrt/windows.graphics.printing3d.h" } |
+            Sort-Object { [version]$_.Name } | Select-Object -Last 1
+          if (-not $sdk) { throw "No hay ningún Windows SDK con winrt/windows.graphics.printing3d.h" }
+          $sdkPath = $sdk.FullName -replace '\\', '/'
+          Write-Host "Windows SDK: $sdkPath"
           mkdir build
           cd build
-          cmake .. -G "Visual Studio 18 2026" -A X64 -DBBL_RELEASE_TO_PUBLIC=1 -DBBL_INTERNAL_TESTING=0 -DCMAKE_PREFIX_PATH="${{ github.workspace }}\bambu\deps\build\BambuStudio_dep\usr\local" -DCMAKE_INSTALL_PREFIX="../install-dir" -DCMAKE_BUILD_TYPE=Release -DWIN10SDK_PATH="C:/Program Files (x86)/Windows Kits/10/Include/10.0.22000.0"
+          cmake .. -G "Visual Studio 18 2026" -A X64 -DBBL_RELEASE_TO_PUBLIC=1 -DBBL_INTERNAL_TESTING=0 -DCMAKE_PREFIX_PATH="${{ github.workspace }}\bambu\deps\build\BambuStudio_dep\usr\local" -DCMAKE_INSTALL_PREFIX="../install-dir" -DCMAKE_BUILD_TYPE=Release -DWIN10SDK_PATH="$sdkPath" 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath configure.log
+          if ($LASTEXITCODE -ne 0) { throw "La configuración de CMake falló" }
+          if (-not (Select-String -Path configure.log -SimpleMatch "Building with Win10 Netfabb STL fixing service support" -Quiet)) { throw "Se compilaría sin 'Reparar modelo' (Netfabb)" }
           cmake --build . --target install --config Release -- -m
+          if ($LASTEXITCODE -ne 0) { throw "La compilación falló" }
 
       - name: Test MCP server
         id: mcp-tests
