@@ -83,6 +83,7 @@ Revisión hunk a hunk de `v02.08.04.61` contra `0001`+`0002`+`0003`, con dos ver
 - Un `project.open` fallido deja el proyecto a medias.
 - Varias herramientas (`export.geometry`, `view.capture`, archivos en `%TEMP%`) usan `std::filesystem::path(...).string()`, que en Windows usa la página de códigos ANSI. Pueden fallar con rutas con acentos (p. ej. `C:\Users\José`).
 - `mcp_orphans_running()` solo cuenta los hilos huérfanos del último `start()`. Si tras una cancelación forzada se lamina otra vez a mano, el MCP puede empezar a laminar mientras el huérfano antiguo sigue en marcha. La oficial ya permite dos hilos sobre el mismo `Print` en ese caso.
+- `ExclusiveJobGroup::start()` llama a `stop_all()` antes de comprobar si hay una tarea del MCP sin terminar. Orientar a mano (tecla R, que no comprueba nada) mientras el MCP organiza cancela la tarea del MCP y no arranca la del usuario.
 
 **Revisado y sin efecto observable:** `BackgroundSlicingProcess::start()` vuelve a instalar el callback de progreso en cada laminado. La oficial ya lo instala en `update_slice_context()` justo antes, y para los laminados normales es el mismo callback.
 
